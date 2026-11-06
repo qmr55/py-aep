@@ -82,4 +82,8 @@ class TextLayer(AVLayer):
         layer._ldta.label = label_index(
             containing_comp._project._preferences, "Text Label Index", 1
         )
+        # Like shape layers, AE creates text layers with Continuously
+        # Rasterize forced on (collapseTransformation true, not settable;
+        # probed in AE 2026).
+        layer._ldta.collapse_transformation = True
         return layer

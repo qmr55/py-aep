@@ -98,6 +98,10 @@ def _unregister_source_usage(
     source._used_in.discard(comp)
 
 
+#: File footage whose collapse switch is "Continuously Rasterize".
+_VECTOR_FOOTAGE_EXTENSIONS = (".ai", ".eps", ".pdf")
+
+
 def _validate_collapse_transformation(value: bool, obj: AVLayer) -> None:
     validate_bool(value)
     if not obj.can_set_collapse_transformation:
@@ -830,11 +834,13 @@ class AVLayer(Layer):
         """`True` if it is possible to set the
         [collapse_transformation][AVLayer.collapse_transformation] value.
 
-        Returns `True` for pre-composition layers and solid layers.
-        Read-only.
+        Returns `True` for pre-composition layers, solid (and null)
+        layers, and vector file footage (Illustrator, EPS, PDF), whose
+        switch is "Continuously Rasterize" (probed in AE 2026). Read-only.
         """
         from ..items.composition import CompItem
         from ..items.footage import FootageItem
+        from ..sources.file import FileSource
         from ..sources.solid import SolidSource
 
         source = self.source
@@ -846,6 +852,8 @@ class AVLayer(Layer):
             ms = source.main_source
             if isinstance(ms, SolidSource):
                 return True
+            if isinstance(ms, FileSource) and ms.file:
+                return ms.file.lower().endswith(_VECTOR_FOOTAGE_EXTENSIONS)
         return False
 
     @property
