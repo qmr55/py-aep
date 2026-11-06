@@ -15,6 +15,7 @@ float32 evaluation lands on the other side of the tie).
 from __future__ import annotations
 
 import math
+import struct
 from typing import TYPE_CHECKING
 
 from ..validators import validate_number
@@ -25,6 +26,9 @@ if TYPE_CHECKING:
     from ...binary.property_chunks import CurvesArbpChunk
 
 CURVES_CHANNELS = ("rgb", "red", "green", "blue", "alpha")
+
+_MAX_POINTS = 16
+"""Point slots per channel in the aRbp."""
 """Channel names, in After Effects' order: `rgb` is the master curve."""
 
 
@@ -156,8 +160,8 @@ class CurvesChannel:
 class Curves:
     """The five curves of a Curves effect.
 
-    Read-only: py-aep does not write curves back to the project, and reads
-    them from one ([Property.value][] or [Keyframe.value][]).
+    Assign a `Curves` (e.g. from `Curves.from_points`) to a static Curves
+    property's `value` to write it; keyframed curves are read-only.
     """
 
     _version: int
@@ -181,6 +185,56 @@ class Curves:
                 name, points, lut, record.selected, obj.uses_points
             )
         return obj
+
+    @classmethod
+    def from_points(
+        cls, channels: dict[str, Sequence[Sequence[int]]], mode: int = 1
+    ) -> Curves:
+        """Build curves from points, as if drawn with the Points tool.
+
+        Args:
+            channels: Channel name (`rgb`, `red`, `green`, `blue`, `alpha`)
+                -> `(input, output)` points in 0..255 (at most 16). Channels
+                left out are the identity line.
+            mode: 1 (points, the default). The maps are each curve's
+                natural cubic spline, rounded and clamped to 0..255, which
+                is what After Effects stores.
+
+        Raises:
+            ValueError: For an unknown channel, too many points or a value
+                outside 0..255.
+        """
+        unknown = set(channels) - set(CURVES_CHANNELS)
+        if unknown:
+            raise ValueError(f"unknown Curves channel(s): {sorted(unknown)}")
+        obj = cls.__new__(cls)
+        obj._version = 1
+        obj._mode = mode
+        obj._channels = {}
+        for name in CURVES_CHANNELS:
+            pts = [(int(x), int(y)) for x, y in channels.get(name, [(0, 0), (255, 255)])]
+            if not 2 <= len(pts) <= _MAX_POINTS:
+                raise ValueError(f"{name}: a curve has 2 to {_MAX_POINTS} points, not {len(pts)}")
+            for x, y in pts:
+                if not (0 <= x <= 255 and 0 <= y <= 255):
+                    raise ValueError(f"{name}: point {(x, y)} is outside 0..255")
+            spline = _NaturalSpline(pts)
+            lut = bytes(min(255, max(0, int(math.floor(spline(i) + 0.5)))) for i in range(256))
+            obj._channels[name] = CurvesChannel(name, pts, lut, -1, mode != 0)
+        return obj
+
+    def _to_arbp_data(self) -> bytes:
+        """Serialize to the 1644-byte aRbp layout (see `CurvesArbpChunk`)."""
+        out = bytearray(struct.pack(">HH", self._version, self._mode))
+        for name in CURVES_CHANNELS:
+            out += bytes(self._channels[name]._map)
+        for name in CURVES_CHANNELS:
+            ch = self._channels[name]
+            pts = ch._points[:_MAX_POINTS]
+            slots = [v for p in pts for v in p] + [0] * (2 * (_MAX_POINTS - len(pts)))
+            out += struct.pack(f">{2 * _MAX_POINTS}h", *slots)
+            out += struct.pack(">Ii", len(pts), ch._selected)
+        return bytes(out)
 
     def _same_curves(self, other: Curves) -> bool:
         """Whether these curves are `other`'s, channel by channel (the

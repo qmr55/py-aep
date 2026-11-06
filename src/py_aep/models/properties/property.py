@@ -1430,6 +1430,10 @@ class Property(PropertyBase):
             "ADBE Vector Anchor",
             "ADBE Vector Grad Start Pt",
             "ADBE Vector Grad End Pt",
+            # Text animator spatials share the canon (AE 2026 addProperty +
+            # setValue); with the synthesis defaults AE reads 0,0,0.
+            "ADBE Text Position 3D",
+            "ADBE Text Anchor Point 3D",
         ):
             # Static shape spatials (measured on an AE 2026 SVG-cropped
             # import: group transform Position/Anchor + gradient-fill
@@ -1855,6 +1859,14 @@ class Property(PropertyBase):
 
     @value.setter
     def value(self, value: _ValueType) -> None:
+        if self._arbs is not None and not self.keyframes:
+            from .curves import Curves  # noqa: PLC0415
+
+            if isinstance(value, Curves):
+                # A static Curves effect's curves: replace its aRbp.
+                self._arbs.chunks[:] = [Chunk(chunk_type="aRbp", data=value._to_arbp_data())]
+                self._curves = None
+                return
         self._reject_curves_write()
         if self._separation_followers() is not None:
             raise ValueError(
@@ -1955,6 +1967,14 @@ class Property(PropertyBase):
                 "Cannot set value on a property with keyframes. "
                 "Use set_value_at_time() instead."
             )
+        if self._tdpi is not None and self._composition is not None:
+            # A layer reference (LAYER_INDEX, e.g. Set Matte's "Take Matte
+            # From Layer", CC Glass's "Bump Map"): reads resolve the `tdpi`
+            # layer id, so write the referenced layer's id there. Accepts a
+            # 1-based layer index (ExtendScript setValue) or a layer; 0/None
+            # clears the reference.
+            self._tdpi.value = self._layer_ref_id(value)
+            return
         _validate_value(self, value)
         if self._unstored_mask_path() and _same_path(cast("Shape", value), self.value):
             # AE 2026 writes no path for a fresh mask set to the rectangle it
@@ -1994,6 +2014,40 @@ class Property(PropertyBase):
             return
         self._write_cdat(value)
         self._cache_written(value)
+        self._sync_static_orientation(value)
+
+    def _sync_static_orientation(self, value: Any) -> None:
+        """Mirror a static Orientation's value into its `otky > otda`.
+
+        AE reads a static Orientation from the otda, not the cdat. The otda
+        is created when the property materializes - holding the value at
+        that moment (the default) - so every later static write must update
+        it too, or AE reads the default (0,0,0) back.
+        """
+        if self.keyframes or self._wrapper is None or not isinstance(value, list):
+            return
+        kind = self._parallel_kind()
+        if kind is None or kind.name != "orientation":
+            return
+        for chunk in self._wrapper.chunks:
+            if getattr(chunk, "list_type", None) == "otky":
+                for inner in chunk.chunks:
+                    if inner.chunk_type == "otda":
+                        inner.values = [float(v) for v in value]
+                        return
+
+    def _layer_ref_id(self, value: Any) -> int:
+        """The layer id a layer-reference value designates (0 = none)."""
+        if value is None or value == 0:
+            return 0
+        layer_id = getattr(value, "id", None)
+        if layer_id is None:
+            index = int(cast("float", value))
+            ids = {i + 1: lid for lid, i in self._composition._layer_id_to_index.items()}
+            if index not in ids:
+                raise ValueError(f"layer index {index} is out of range")
+            layer_id = ids[index]
+        return int(layer_id)
 
     def _cache_value(self, value: _ValueType) -> None:
         """Cache a value decoded from chunks (parser-only).
