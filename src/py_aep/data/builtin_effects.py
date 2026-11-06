@@ -144,3 +144,32 @@ BUILTIN_EFFECTS: dict[str, tuple[str, str]] = {
         ),
     ),
 }
+
+#: Effect match name -> (display name, serialized `LIST:sspc` as hex),
+#: registered at runtime with `register_effect_templates`. Consulted before
+#: `BUILTIN_EFFECTS` (but after the project's own `LIST:EfdG`), so templates
+#: harvested from the After Effects release and plugins actually in use
+#: take precedence over the baked defaults.
+REGISTERED_EFFECTS: dict[str, tuple[str, str]] = {}
+
+
+def register_effect_templates(templates: dict[str, tuple[str, str]]) -> None:
+    """Register effect templates so `add_property` can add those effects to
+    projects that have never used them.
+
+    Each template is the complete applied-effect `LIST:sspc` After Effects
+    stores in a project's `LIST:EfdG` for that effect, serialized as hex -
+    the same shape as `BUILTIN_EFFECTS`. Harvest them from any `.aep` in
+    which the effects were applied (e.g. by applying every entry of
+    `app.effects` from a script and saving), which also covers third-party
+    plugins installed on that machine.
+
+    Args:
+        templates: Effect match name -> `(display_name, sspc_hex)`. Later
+            registrations replace earlier ones for the same match name.
+    """
+    for match_name, (display, blob) in templates.items():
+        if not isinstance(display, str) or not isinstance(blob, str):
+            raise TypeError(f"template for {match_name!r} must be (str, str)")
+        bytes.fromhex(blob[:64])  # fail fast on non-hex data
+        REGISTERED_EFFECTS[match_name] = (display, blob)

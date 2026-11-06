@@ -4,7 +4,7 @@ import re
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, cast
 
-from py_aep.data.builtin_effects import BUILTIN_EFFECTS
+from py_aep.data.builtin_effects import BUILTIN_EFFECTS, REGISTERED_EFFECTS
 from py_aep.data.effect_controls import EXPRESSION_CONTROLS
 from py_aep.data.match_names import MATCH_NAME_TO_AUTO_NAME
 from py_aep.enums import PropertyType
@@ -107,21 +107,23 @@ _PUPPET_ENGINE_VERSION = (2).to_bytes(4, "big")
 
 
 def _baked_effect_def(name: str) -> tuple[str, str, ListChunk] | None:
-    """Resolve `name` against the baked built-in effect templates.
+    """Resolve `name` against the registered, then baked built-in, effect templates.
 
     Matches the effect match name first, then the display name, the same
     order `match_effect_definition` uses for the project's own EfdG. The
     stored blob is deserialized fresh on every call, so the caller owns
     the returned chunks and the table stays pristine.
     """
-    entry = BUILTIN_EFFECTS.get(name)
+    tables = (REGISTERED_EFFECTS, BUILTIN_EFFECTS)
+    entry = next((t[name] for t in tables if name in t), None)
     if entry is not None:
         match_name = name
     else:
         found = next(
             (
                 (candidate, value)
-                for candidate, value in BUILTIN_EFFECTS.items()
+                for table in tables
+                for candidate, value in table.items()
                 if value[0] == name
             ),
             None,

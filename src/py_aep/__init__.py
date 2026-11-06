@@ -161,6 +161,7 @@ from .models import (
 )
 from .models.validators import validate_ae_release, validate_platform
 from .parsers.comp_presets import CompPreset
+from .data.builtin_effects import register_effect_templates
 from .resolvers.source_layers import list_layers
 
 try:
@@ -272,6 +273,7 @@ __all__ = [
     "ParagraphDirection",
     "ParagraphJustification",
     "parse",
+    "register_effect_templates",
     "PlaceholderSource",
     "PlayMode",
     "PngFormatOptions",
