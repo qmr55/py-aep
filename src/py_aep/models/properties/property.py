@@ -1449,6 +1449,24 @@ class Property(PropertyBase):
             self._tdb4._property_category = 0x09
             self._tdb4._spatial_marker = True
         elif (
+            self.is_spatial
+            and not self._color  # colours have their own canon (below)
+            and not self._is_in_effect()
+            and self._tdb4._value_hint_type == 0
+            and self._tdb4._property_category == 0
+        ):
+            # Any other static spatial still carrying the synthesis
+            # defaults (e.g. a Repeater's Position, measured AE 2026): the
+            # shape-spatial canon above; without it AE reads the default.
+            self._tdb4._spatial_static_flags = 0x0F
+            self._tdb4._pad2a = 3
+            self._tdb4._value_hint_type = 0xFFFF
+            self._tdb4._value_hint_flag = 0xFF
+            self._tdb4._cvot_flags = 0xFF
+            self._tdb4._type_flags = 0x08
+            self._tdb4._property_category = 0x09
+            self._tdb4._spatial_marker = True
+        elif (
             self._color
             and not self._is_in_effect()
             and self._tdb4._value_hint_type == 0

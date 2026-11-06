@@ -1353,12 +1353,22 @@ _TEXT_PATH_OPTIONS_SPECS: list[PropSpec] = [
         "First Margin",
         0.0,
         PropertyValueType.OneD,
+        # AE 2026 writes the [0.0] tdum/tduM placeholders and a 0xFFFF value
+        # hint for this unbounded scalar; without them a materialized value
+        # makes AE reject the project ("missing data in file").
+        bound_chunks=True,
+        value_hint_type=0xFFFF,
     ),
     _spec(
         "ADBE Text Last Margin",
         "Last Margin",
         0.0,
         PropertyValueType.OneD,
+        # AE 2026 writes the [0.0] tdum/tduM placeholders and a 0xFFFF value
+        # hint for this unbounded scalar; without them a materialized value
+        # makes AE reject the project ("missing data in file").
+        bound_chunks=True,
+        value_hint_type=0xFFFF,
     ),
 ]
 
@@ -1744,6 +1754,11 @@ _VECTOR_STROKE_DASHES_SPECS: list[PropSpec] = [
         "Offset",
         0.0,
         PropertyValueType.OneD,
+        # AE 2026 writes the [0.0] tdum/tduM placeholders and a 0xFFFF value
+        # hint for this unbounded scalar; without them a materialized value
+        # makes AE reject the project ("missing data in file").
+        bound_chunks=True,
+        value_hint_type=0xFFFF,
     ),
 ]
 
