@@ -58,10 +58,31 @@ _OBJ_HEADER_RE = re.compile(rb"(\d+)[ \t\r\n]+(\d+)[ \t\r\n]+\Z")
 _OBJ_HEADER_WINDOW = 64
 
 
+# Recent (data, offsets) pairs. Importing every layer of a layered .ai reads
+# and scans the same document once per layer (and again for its bounds); on
+# a 250 MB storyboard that scan costs ~1 s each time. Comparing equal bytes
+# is a memcmp, far cheaper than re-scanning them.
+_OFFSETS_CACHE: list[tuple[bytes, dict[int, int]]] = []
+_OFFSETS_CACHE_SIZE = 2
+
+
 def _object_offsets(data: bytes) -> dict[int, int]:
     """Map each indirect object number to its byte offset (last definition wins).
 
-    Finds each `obj` keyword and matches its header just before it: a
+    Results are cached for the most recent documents; callers must treat the
+    returned dict as read-only.
+    """
+    for cached_data, cached in _OFFSETS_CACHE:
+        if cached_data is data or (len(cached_data) == len(data) and cached_data == data):
+            return cached
+    offsets = _scan_object_offsets(data)
+    _OFFSETS_CACHE.insert(0, (data, offsets))
+    del _OFFSETS_CACHE[_OFFSETS_CACHE_SIZE:]
+    return offsets
+
+
+def _scan_object_offsets(data: bytes) -> dict[int, int]:
+    """Finds each `obj` keyword and matches its header just before it: a
     pattern led by the header's digits would be tried at every digit in the
     file's content streams, tens of times slower on a large document.
     """
